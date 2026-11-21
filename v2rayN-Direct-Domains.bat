@@ -605,6 +605,7 @@ $script:SharedXaml = @'
 $RuleDomain = 'My Direct'
 $RuleIp     = 'My Direct IP'
 $DnsTag     = 'my-direct'
+$AdsTag     = 'ads-block'
 $FallbackIranDns = '217.218.155.155'
 
 # ---- backup text file (next to the .bat; falls back to Documents) ----
@@ -725,12 +726,34 @@ function Update-DnsText([string]$text, $p) {
   if (-not $text -or -not $text.Trim()) { return $text }
   try { $cfg = ConvertFrom-Json -InputObject $text } catch { return $text }
   if (-not $cfg.servers) { return $text }
-  $servers = @($cfg.servers | Where-Object { -not ($_ -is [pscustomobject] -and $_.tag -eq $DnsTag) })
+  $ours = { param($s) ($s -is [pscustomobject]) -and ($s.tag -eq $DnsTag -or $s.tag -eq $AdsTag) }
+  $hadAds = @($cfg.servers | Where-Object { ($_ -is [pscustomobject]) -and $_.tag -eq $AdsTag }).Count -gt 0
+  $servers = @($cfg.servers | Where-Object { -not (& $ours $_) })
+  $hasHosts = [bool]($cfg.PSObject.Properties['hosts'] -and $cfg.hosts)
+  $adsKey = 'geosite:category-ads-all'
   if ($p.Domains.Count) {
     $iran = $servers | Where-Object { $_ -is [pscustomobject] -and $_.expectedIPs -contains 'geoip:ir' } | Select-Object -First 1
     $addr = if ($iran) { [string]$iran.address } else { $FallbackIranDns }
     $mine = [pscustomobject][ordered]@{ address = $addr; domains = @($p.Domains); skipFallback = $true; tag = $DnsTag }
-    $servers = @($mine) + $servers
+    $new = @($mine)
+    # A "hosts" blackhole for ad domains beats every DNS server, so a site that is also on the ad list
+    # (e.g. an ad network's panel) would resolve to 127.0.0.1. Move that block to a DNS server that is
+    # placed AFTER our direct server: our domains resolve normally, every other ad domain stays blocked.
+    if ($hasHosts -and $cfg.hosts.PSObject.Properties[$adsKey]) {
+      $cfg.hosts.PSObject.Properties.Remove($adsKey)
+      $new += [pscustomobject][ordered]@{ address = 'rcode://refused'; domains = @($adsKey); skipFallback = $true; tag = $AdsTag }
+    } elseif ($hadAds) {
+      $new += [pscustomobject][ordered]@{ address = 'rcode://refused'; domains = @($adsKey); skipFallback = $true; tag = $AdsTag }
+    }
+    $servers = $new + $servers
+  } elseif ($hadAds) {
+    # list is empty again: restore the original hosts-based ad block
+    $cur = if ($hasHosts) { $cfg.hosts } else { [pscustomobject]@{} }
+    if (-not $cur.PSObject.Properties[$adsKey]) {
+      $h = [ordered]@{ $adsKey = '127.0.0.1' }
+      foreach ($pr in $cur.PSObject.Properties) { $h[$pr.Name] = $pr.Value }
+      $cfg | Add-Member -NotePropertyName hosts -NotePropertyValue ([pscustomobject]$h) -Force
+    }
   }
   $cfg.servers = $servers
   ConvertTo-Json -InputObject $cfg -Depth 12

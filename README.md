@@ -12,6 +12,7 @@ Iran rules (`geosite:ir`) cover ~57k domains, but not every Iranian site (many a
 - One entry per line: domain (subdomains included), full URL, IP / CIDR, IDN (Persian) domain, `geosite:xxx`, `geoip:xx`. `#` starts a comment.
 - Adds a **direct** rule at the top of every routing profile (`My Direct`, `My Direct IP`)
 - Adds a DNS server (your existing Iran DNS, no `expectedIPs` filter) for those domains, tagged `my-direct`, in both Normal and TUN DNS
+- **Ad-network sites work too** (e.g. a panel of an ad network): v2rayN's DNS blackholes ad domains via `hosts` → `127.0.0.1`, which beats every DNS server. When your list is active the tool moves that block to a DNS server placed *after* yours, so your domains resolve normally and every other ad domain stays blocked. Clearing the list restores the original setup exactly.
 - **Backup in a text file** next to the `.bat` (`direct-domains.txt`): after you reset v2rayN, run the tool again and re-apply with one click
 - Idempotent (apply as many times as you like), a backup of `guiNDB.db` before each change, optional automatic v2rayN restart
 - Works with v2rayN 6.x / 7.x. No install, no Python (PowerShell/WPF + v2rayN's own `e_sqlite3.dll`)
